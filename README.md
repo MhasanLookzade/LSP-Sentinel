@@ -56,18 +56,26 @@ Dispatches instant incident alerts to **Telegram Bots**, **Discord Webhooks**, a
 
 ## 🚀 Quickstart & Installation
 
-### Option 1: 1-Line Installer on Linux (Ubuntu / Debian / CentOS / Rocky)
+### ⚡ Option 1: 1-Command Automated Install (No Clone Needed)
 
-Run the automated installer as root:
+Run this single command directly in your server terminal:
 
 ```bash
-sudo bash install.sh
+curl -sSL https://raw.githubusercontent.com/MhasanLookzade/LSP-Sentinel/main/install.sh | sudo bash
 ```
 
-This will:
-1. Install Python3 and virtual environment dependencies.
-2. Set up `/opt/lsp-sentinel` and symlink the CLI to `/usr/local/bin/lsp-sentinel` (and `lsp-sential`).
-3. Configure and start a `systemd` service (`lsp-sentinel.service`) running the web dashboard on port `8443`.
+*Or using `wget`:*
+
+```bash
+wget -qO- https://raw.githubusercontent.com/MhasanLookzade/LSP-Sentinel/main/install.sh | sudo bash
+```
+
+This will automatically:
+1. Detect your package manager and install Python3 + virtual environment dependencies.
+2. Fetch the LSP-Sentinel engine into `/opt/lsp-sentinel`.
+3. Register global CLI commands (`lsp-sentinel` and `lsp-sential`) in `/usr/local/bin`.
+4. Configure and start a persistent `systemd` daemon service (`lsp-sentinel.service`).
+5. Launch the Web Dashboard on `http://<YOUR-SERVER-IP>:8443`.
 
 ### Option 2: Docker / Docker Compose
 
