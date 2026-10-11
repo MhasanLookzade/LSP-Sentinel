@@ -1,0 +1,22 @@
+services:
+  lsp-sentinel:
+    build: .
+    container_name: lsp-sentinel
+    restart: unless-stopped
+    ports:
+      - "8443:8443"
+    volumes:
+      # Mount host docker socket to monitor containers & disk waste
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Mount host log & cache directories for disk intelligence (read-only by default)
+      - /var/log:/host/var/log:ro
+      - /var/cache:/host/var/cache:ro
+      # Sentinel configuration persistence
+      - ./sentinel.yaml:/app/sentinel.yaml:rw
+    environment:
+      - PYTHONUNBUFFERED=1
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
