@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LSP-Sentinel // Autonomous SRE & Disk Intelligence</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/dashboard.css">
+</head>
+<body>
+
+  <!-- Top Navigation -->
+  <header class="navbar">
+    <div class="brand-wrapper">
+      <div class="brand-logo">LS</div>
+      <div>
+        <div class="brand-title">LSP-SENTINEL</div>
+        <div class="brand-tag">SRE Health & Disk Intelligence v{{ version }}</div>
+      </div>
+    </div>
+
+    <div class="header-status">
+      <div class="status-pill">
+        <span class="pulse-dot"></span>
+        <span id="server-host">Connecting...</span>
+      </div>
+      <div class="status-pill">
+        <span>⏱️ <span id="server-uptime">--</span></span>
+      </div>
+      <div class="status-pill">
+        <span>💻 <span id="server-os">--</span></span>
+      </div>
+      <button class="btn btn-secondary" id="btn-test-alert" onclick="triggerTestAlert()">
+        🔔 Test Alert
+      </button>
+    </div>
+  </header>
+
+  <!-- Navigation Tabs -->
+  <nav class="tab-nav">
+    <button class="tab-btn active" data-tab="tab-health">
+      📊 Hard Health & Metrics
+    </button>
+    <button class="tab-btn" data-tab="tab-disk">
+      💾 Disk Intelligence & Safe Cleaner
+    </button>
+    <button class="tab-btn" data-tab="tab-synthetic">
+      🌐 Synthetic Probes & TLS
+    </button>
+    <button class="tab-btn" data-tab="tab-chaos">
+      ⚡ Chaos & Resilience Lab
+    </button>
+    <button class="tab-btn" data-tab="tab-runbooks">
+      🛠️ SRE Triage Runbooks
+    </button>
+  </nav>
+
+  <!-- Main Container -->
+  <main class="dashboard-container">
+
+    <!-- TAB 1: Hard Health -->
+    <section id="tab-health" class="tab-content active">
+      <div class="grid-4">
+        <!-- CPU Card -->
+        <div class="glass-card">
+          <div class="card-header">
+            <span class="card-title">Processor Load</span>
+            <span>⚡</span>
+          </div>
+          <div class="metric-big" id="cpu-val">--%</div>
+          <div class="metric-sub" id="cpu-sub">Loading cores...</div>
+          <div class="bar-track">
+            <div id="cpu-bar" class="bar-fill cyan" style="width: 0%;"></div>
+          </div>
+        </div>
+
+        <!-- RAM Card -->
+        <div class="glass-card">
+          <div class="card-header">
+            <span class="card-title">Memory (RAM)</span>
+            <span>🧠</span>
+          </div>
+          <div class="metric-big" id="ram-val">--%</div>
+          <div class="metric-sub" id="ram-sub">Used vs Available</div>
+          <div class="bar-track">
+            <div id="ram-bar" class="bar-fill green" style="width: 0%;"></div>
+          </div>
+        </div>
+
+        <!-- Swap Card -->
+        <div class="glass-card">
+          <div class="card-header">
+            <span class="card-title">Swap Utilization</span>
+            <span>🔄</span>
+          </div>
+          <div class="metric-big" id="swap-val">--%</div>
+          <div class="metric-sub" id="swap-sub">Virtual Memory</div>
+          <div class="bar-track">
+            <div id="swap-bar" class="bar-fill amber" style="width: 0%;"></div>
+          </div>
+        </div>
+
+        <!-- Docker Daemon Card -->
+        <div class="glass-card">
+          <div class="card-header">
+            <span class="card-title">Container Engine</span>
+            <span>🐳</span>
+          </div>
+          <div id="docker-status-box" style="margin-top: 0.5rem;">
+            <div class="metric-sub">Inspecting Docker daemon...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Partitions Table -->
+      <div class="glass-card" style="margin-bottom: 2rem;">
+        <div class="card-header">
+          <h2 class="card-title" style="font-size:1.05rem; color:#fff;">Storage Mountpoints & Inodes</h2>
+        </div>
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Mountpoint</th>
+                <th>Device</th>
+                <th>FSType</th>
+                <th>Space (Used / Total)</th>
+                <th>Usage %</th>
+                <th>Inodes %</th>
+              </tr>
+            </thead>
+            <tbody id="partitions-tbody">
+              <tr><td colspan="6" style="text-align:center;">Loading partitions...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Top Processes -->
+      <div class="glass-card">
+        <div class="card-header">
+          <h2 class="card-title" style="font-size:1.05rem; color:#fff;">Top CPU & Memory Consuming Processes</h2>
+        </div>
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>PID</th>
+                <th>Process Name</th>
+                <th>CPU %</th>
+                <th>RAM %</th>
+                <th>User</th>
+              </tr>
+            </thead>
+            <tbody id="procs-tbody">
+              <tr><td colspan="5" style="text-align:center;">Loading processes...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: Disk Intelligence & Safety Cleaner -->
+    <section id="tab-disk" class="tab-content">
+      <!-- Hero 3-box summary -->
+      <div class="disk-hero">
+        <div class="hero-box safe">
+          <div style="font-size:0.8rem; font-weight:700; color:var(--accent-green); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:4px;">
+            🟢 Safe Reclaimable Space
+          </div>
+          <div class="metric-big" id="disk-safe-space" style="color: #fff;">--</div>
+          <div style="font-size:0.85rem; color:var(--text-secondary); margin-top:4px;">
+            Rotated logs (.gz), apt/yum caches, tmp files, dangling layers. Safe to clean without risking system stability.
+          </div>
+        </div>
+
+        <div class="hero-box review">
+          <div style="font-size:0.8rem; font-weight:700; color:var(--accent-amber); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:4px;">
+            🟡 Reviewable Storage
+          </div>
+          <div class="metric-big" id="disk-review-space" style="color: #fff;">--</div>
+          <div style="font-size:0.85rem; color:var(--text-secondary); margin-top:4px;">
+            Active log files (>50MB), old database backups. Recommend <strong>log truncation</strong> rather than deletion.
+          </div>
+        </div>
+
+        <div class="hero-box critical">
+          <div style="font-size:0.8rem; font-weight:700; color:var(--accent-red); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:4px;">
+            🔴 Protected System Assets
+          </div>
+          <div class="metric-big" id="disk-protected-space" style="color: #fff;">--</div>
+          <div style="font-size:0.85rem; color:var(--text-secondary); margin-top:4px;">
+            /etc, /boot, database engines, SSH keys. Shielded by Sentinel safety rules to prevent VPS corruption.
+          </div>
+        </div>
+      </div>
+
+      <!-- Controls -->
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem; margin-bottom:1.5rem;">
+        <div style="display:flex; gap:0.5rem; align-items:center;">
+          <button class="btn btn-secondary filter-btn active" onclick="filterFiles('ALL')">All Files</button>
+          <button class="btn btn-secondary filter-btn" onclick="filterFiles('SAFE')">🟢 Safe Only</button>
+          <button class="btn btn-secondary filter-btn" onclick="filterFiles('REVIEW')">🟡 Review Only</button>
+          <button class="btn btn-secondary filter-btn" onclick="filterFiles('CRITICAL')">🔴 Protected</button>
+        </div>
+
+        <div style="display:flex; gap:0.75rem;">
+          <button class="btn btn-secondary" id="btn-rescan-disk" onclick="triggerDiskScan()">
+            🔄 Re-scan Disks
+          </button>
+          <button class="btn btn-primary" onclick="executeCleanup(true)">
+            🛡️ Dry-Run Preview
+          </button>
+          <button class="btn btn-success" onclick="executeCleanup(false)">
+            🧹 Execute Safe Cleanup
+          </button>
+        </div>
+      </div>
+
+      <div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:1.5rem;" id="disk-scan-time">
+        Scan status: initial
+      </div>
+
+      <!-- Top Folders -->
+      <div class="glass-card" style="margin-bottom: 2rem;">
+        <div class="card-header">
+          <h2 class="card-title" style="font-size:1.05rem; color:#fff;">Top Largest Directories</h2>
+        </div>
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Directory Path</th>
+                <th>Total Size</th>
+                <th>Safety Status</th>
+                <th>Recommendation</th>
+              </tr>
+            </thead>
+            <tbody id="folders-tbody">
+              <tr><td colspan="4" style="text-align:center;">Scanning directories...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Top Files -->
+      <div class="glass-card">
+        <div class="card-header">
+          <h2 class="card-title" style="font-size:1.05rem; color:#fff;">Largest Files & Safety Advisory</h2>
+        </div>
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width: 40px;">Select</th>
+                <th>File Path</th>
+                <th>Size</th>
+                <th>Safety Verdict</th>
+                <th>Recommended Action & Command Hint</th>
+              </tr>
+            </thead>
+            <tbody id="files-tbody">
+              <tr><td colspan="5" style="text-align:center;">Scanning files...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: Synthetic Probes -->
+    <section id="tab-synthetic" class="tab-content">
+      <div class="glass-card">
+        <div class="card-header">
+          <h2 class="card-title" style="font-size:1.05rem; color:#fff;">Synthetic Service & SSL Health Probes</h2>
+          <button class="btn btn-secondary" onclick="fetchSynthetic()">⚡ Re-probe Now</button>
+        </div>
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Probe Name</th>
+                <th>Type</th>
+                <th>Endpoint / Target</th>
+                <th>Health Status</th>
+                <th>Latency</th>
+                <th>Diagnostics / SSL Expiry</th>
+              </tr>
+            </thead>
+            <tbody id="synthetic-tbody">
+              <tr><td colspan="6" style="text-align:center;">Running synthetic probes...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 4: Chaos & Resilience Lab -->
+    <section id="tab-chaos" class="tab-content">
+      <div class="grid-2">
+        <div class="glass-card">
+          <div class="card-header">
+            <h2 class="card-title" style="font-size:1.05rem; color:#fff;">⚡ Chaos Fault Injection Triggers</h2>
+          </div>
+          <p style="font-size:0.9rem; color:var(--text-secondary); margin-bottom:1.5rem;">
+            Test your VPS alerting, auto-remediation, and throttling by injecting controlled synthetic load with automatic safeguards.
+          </p>
+
+          <div style="display:flex; flex-direction:column; gap:1rem;">
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:1rem; background:rgba(255,255,255,0.02); border-radius:8px; border:1px solid var(--border-subtle);">
+              <div>
+                <strong>CPU Spike Simulation</strong>
+                <div style="font-size:0.8rem; color:var(--text-muted);">Spins multithreaded calculation for 6s to test alert limits.</div>
+              </div>
+              <button class="btn btn-primary" onclick="launchChaos('cpu')">Run CPU Test</button>
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:1rem; background:rgba(255,255,255,0.02); border-radius:8px; border:1px solid var(--border-subtle);">
+              <div>
+                <strong>RAM Buffer Allocation</strong>
+                <div style="font-size:0.8rem; color:var(--text-muted);">Allocates 256MB memory buffer for 6s with OOM abort safeguards.</div>
+              </div>
+              <button class="btn btn-primary" onclick="launchChaos('ram')">Run RAM Test</button>
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:1rem; background:rgba(255,255,255,0.02); border-radius:8px; border:1px solid var(--border-subtle);">
+              <div>
+                <strong>Synthetic Latency Jitter</strong>
+                <div style="font-size:0.8rem; color:var(--text-muted);">Injects network delay to test timeout handling and probe sensitivity.</div>
+              </div>
+              <button class="btn btn-primary" onclick="launchChaos('delay')">Run Latency Test</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="glass-card">
+          <div class="card-header">
+            <h2 class="card-title" style="font-size:1.05rem; color:#fff;">📋 Experiment Telemetry</h2>
+          </div>
+          <div id="chaos-output-box" style="min-height: 200px; display:flex; align-items:center; justify-content:center; color:var(--text-muted); font-size:0.9rem;">
+            Ready to initiate chaos experiments. Select an experiment from the left panel.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 5: SRE Runbooks -->
+    <section id="tab-runbooks" class="tab-content">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
+        <div>
+          <h2 style="font-size:1.3rem; font-weight:700;">SRE Incident Triage Runbooks</h2>
+          <p style="color:var(--text-secondary); font-size:0.9rem;">Automated problem diagnosis, likely root causes, and ready-to-run terminal commands.</p>
+        </div>
+        <button class="btn btn-secondary" onclick="fetchRunbooks()">🔄 Refresh Runbooks</button>
+      </div>
+
+      <div id="runbooks-container">
+        <div style="text-align:center; padding:2rem;">Compiling runbooks...</div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Cleanup Modal -->
+  <div id="cleanup-modal" class="modal-overlay">
+    <div class="modal-box">
+      <h3 id="modal-title" style="margin-bottom: 1rem; font-size: 1.25rem;">Shielded Cleanup Preview</h3>
+      <div id="modal-content-body"></div>
+      <div style="margin-top: 1.5rem; display: flex; justify-content: flex-end; gap: 0.75rem;">
+        <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/dashboard.js"></script>
+</body>
+</html>
