@@ -1,0 +1,77 @@
+# LSP-Sentinel Configuration
+server_name: "LSP-Server-01"
+environment: "production"
+
+# Hard Health & Disk Intelligence Settings
+disk:
+  scan_paths:
+    # Linux standard paths:
+    - "/var/log"
+    - "/var/cache"
+    - "/tmp"
+    - "/root"
+    - "/home"
+  min_file_size_mb: 25.0
+  max_scan_depth: 4
+  exclude_dirs:
+    - "/proc"
+    - "/sys"
+    - "/dev"
+    - "/run"
+    - "/snap"
+    - "C:\\Windows"
+    - "C:\\$Recycle.Bin"
+    - "C:\\System Volume Information"
+
+# Alerting Engine (Sends instant incident & cleanup alerts)
+alerts:
+  enabled: false
+  telegram_bot_token: ""       # e.g. "123456789:ABCdefGhIJKlmNoPQRstuvwxYZ"
+  telegram_chat_id: ""         # e.g. "-100123456789"
+  discord_webhook_url: ""      # e.g. "https://discord.com/api/webhooks/..."
+  slack_webhook_url: ""        # e.g. "https://hooks.slack.com/services/..."
+  cpu_threshold_pct: 85.0
+  ram_threshold_pct: 90.0
+  disk_threshold_pct: 88.0
+  ssl_expiry_days_warn: 14
+
+# Embedded Web Dashboard Server
+web:
+  host: "0.0.0.0"
+  port: 8443
+  auth_token: "sentinel-secure-key"
+
+# Chaos & Resilience Testing Safeguards
+chaos:
+  max_duration_sec: 60
+  max_cpu_percent: 85
+  max_ram_mb: 1024
+  allow_network_simulation: true
+
+# Synthetic Health Probes & Endpoint Watchdogs
+synthetic_targets:
+  - name: "Public Internet (Cloudflare)"
+    type: "http"
+    target: "https://1.1.1.1"
+    expected_status: 200
+    timeout_sec: 3.0
+    warn_latency_ms: 300.0
+
+  - name: "GitHub API & TLS Check"
+    type: "ssl"
+    target: "api.github.com:443"
+    timeout_sec: 4.0
+    warn_latency_ms: 600.0
+
+  - name: "Local Web Service"
+    type: "http"
+    target: "http://127.0.0.1:80"
+    expected_status: 200
+    timeout_sec: 2.0
+    warn_latency_ms: 150.0
+
+  - name: "Local SSH Port Probe"
+    type: "tcp"
+    target: "127.0.0.1:22"
+    timeout_sec: 2.0
+    warn_latency_ms: 100.0
