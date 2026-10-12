@@ -2,13 +2,23 @@ from typing import Dict, Any, List, Optional
 import time
 
 class SREIncident:
-    def __init__(self, title: str, severity: str, metric_value: str, root_causes: List[str], remediation_steps: List[str], commands: List[str]):
+    def __init__(
+        self,
+        title: str,
+        severity: str,
+        metric_value: str,
+        root_causes: List[str],
+        remediation_steps: List[str],
+        commands: List[str],
+        correlated_changes: Optional[List[Dict[str, Any]]] = None
+    ):
         self.title = title
         self.severity = severity  # CRITICAL, WARNING, INFO
         self.metric_value = metric_value
         self.root_causes = root_causes
         self.remediation_steps = remediation_steps
         self.commands = commands
+        self.correlated_changes = correlated_changes or []
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -17,7 +27,8 @@ class SREIncident:
             "metric_value": self.metric_value,
             "root_causes": self.root_causes,
             "remediation_steps": self.remediation_steps,
-            "commands": self.commands
+            "commands": self.commands,
+            "correlated_changes": self.correlated_changes
         }
 
 def generate_sre_runbooks(
@@ -25,7 +36,8 @@ def generate_sre_runbooks(
     disk_scan_summary: Optional[Dict[str, Any]] = None,
     synthetic_results: Optional[List[Dict[str, Any]]] = None,
     docker_containers: Optional[List[Dict[str, Any]]] = None,
-    services_summary: Optional[Dict[str, Any]] = None
+    services_summary: Optional[Dict[str, Any]] = None,
+    drift_changes: Optional[List[Dict[str, Any]]] = None
 ) -> List[SREIncident]:
     runbooks: List[SREIncident] = []
 
@@ -231,5 +243,14 @@ def generate_sre_runbooks(
                             f"systemctl start {s_name}"
                         ]
                     ))
+
+    # 7. Correlate Pre-Incident System Drift
+    if drift_changes and runbooks:
+        for inc in runbooks:
+            inc.correlated_changes = drift_changes
+            for c in drift_changes[:2]:
+                correl_note = f"⚡ Correlated Pre-Incident Change ({c['time_label']}): {c['target']} was {c['action'].lower()} ({c['category']})"
+                if correl_note not in inc.root_causes:
+                    inc.root_causes.insert(0, correl_note)
 
     return runbooks

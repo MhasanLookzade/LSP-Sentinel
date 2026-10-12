@@ -53,6 +53,25 @@ class AutopilotConfig(BaseModel):
     auto_clean_enabled: bool = False
     cooldown_sec: int = 300
 
+class DriftConfig(BaseModel):
+    enabled: bool = True
+    watch_paths: List[str] = Field(default_factory=lambda: [
+        "/etc/nginx",
+        "/etc/hosts",
+        "/etc/resolv.conf",
+        "/etc/fstab",
+        "/etc/sysctl.conf",
+        "/etc/crontab",
+        "/etc/cron.d",
+        "/etc/systemd/system",
+        "/etc/ssh/sshd_config",
+        "/etc/environment",
+        ".env",
+        "sentinel.yaml"
+    ])
+    state_file: str = ".sentinel_drift_ledger.json"
+    max_history: int = 500
+
 class SentinelConfig(BaseModel):
     server_name: str = "VPS-Production-01"
     environment: str = "production"
@@ -61,6 +80,7 @@ class SentinelConfig(BaseModel):
     web: ServerConfig = Field(default_factory=ServerConfig)
     chaos: ChaosLimits = Field(default_factory=ChaosLimits)
     autopilot: AutopilotConfig = Field(default_factory=AutopilotConfig)
+    drift: DriftConfig = Field(default_factory=DriftConfig)
     services: List[str] = Field(default_factory=lambda: [
         "nginx", "docker", "postgresql", "mysql", "redis", "ssh", "sshd", "ufw", "cron"
     ])

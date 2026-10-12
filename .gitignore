@@ -6,3 +6,6 @@ dist/
 build/
 .pytest_cache/
 *.log
+.sentinel_drift_ledger.json
+.sentinel_*.json
+

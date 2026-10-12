@@ -94,3 +94,23 @@ autopilot:
   auto_clean_enabled: false   # If true, auto-purges strictly SAFE files when disk exceeds threshold
   cooldown_sec: 300           # Suppress duplicate alerts for 5 minutes
 
+# Time-Machine System Drift & Change Ledger
+drift:
+  enabled: true
+  watch_paths:
+    - "/etc/nginx"
+    - "/etc/hosts"
+    - "/etc/resolv.conf"
+    - "/etc/fstab"
+    - "/etc/sysctl.conf"
+    - "/etc/crontab"
+    - "/etc/cron.d"
+    - "/etc/systemd/system"
+    - "/etc/ssh/sshd_config"
+    - "/etc/environment"
+    - ".env"
+    - "sentinel.yaml"
+  state_file: ".sentinel_drift_ledger.json"
+  max_history: 500
+
+
