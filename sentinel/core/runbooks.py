@@ -24,7 +24,8 @@ def generate_sre_runbooks(
     health_metrics: Dict[str, Any],
     disk_scan_summary: Optional[Dict[str, Any]] = None,
     synthetic_results: Optional[List[Dict[str, Any]]] = None,
-    docker_containers: Optional[List[Dict[str, Any]]] = None
+    docker_containers: Optional[List[Dict[str, Any]]] = None,
+    services_summary: Optional[Dict[str, Any]] = None
 ) -> List[SREIncident]:
     runbooks: List[SREIncident] = []
 
@@ -182,5 +183,53 @@ def generate_sre_runbooks(
                         f"docker restart {c.get('id')}"
                     ]
                 ))
+
+    # 6. Failed System Services & Units
+    if services_summary:
+        for unit in services_summary.get("failed_units", []):
+            runbooks.append(SREIncident(
+                title=f"Failed Systemd Unit: {unit}",
+                severity="CRITICAL",
+                metric_value="Unit status: failed",
+                root_causes=[
+                    f"Unit '{unit}' exited with error or failed start dependencies",
+                    "Misconfigured unit file or missing credentials/files",
+                    "Uncaught runtime exception in daemon process"
+                ],
+                remediation_steps=[
+                    f"Inspect unit status and journalctl logs",
+                    f"Fix configuration and reset failed state with 'systemctl reset-failed'"
+                ],
+                commands=[
+                    f"systemctl status {unit}",
+                    f"journalctl -u {unit} -n 50 --no-pager",
+                    f"systemctl restart {unit}"
+                ]
+            ))
+
+        for svc in services_summary.get("services", []):
+            if svc.get("is_critical") and svc.get("status") in ("failed", "inactive"):
+                s_name = svc.get("name")
+                # Avoid duplicate if already reported in failed_units
+                if s_name not in services_summary.get("failed_units", []):
+                    runbooks.append(SREIncident(
+                        title=f"Critical Service Inactive: {s_name}",
+                        severity="CRITICAL" if svc.get("status") == "failed" else "WARNING",
+                        metric_value=f"Status: {svc.get('status')} ({svc.get('sub_state', 'unknown')})",
+                        root_causes=[
+                            f"Service '{s_name}' is not currently running or crashed",
+                            "Daemon was manually stopped or never enabled at boot",
+                            "Port collision preventing daemon binding"
+                        ],
+                        remediation_steps=[
+                            f"Inspect service journal logs",
+                            f"Start and enable service using systemctl"
+                        ],
+                        commands=[
+                            f"systemctl status {s_name}",
+                            f"journalctl -u {s_name} -n 50 --no-pager",
+                            f"systemctl start {s_name}"
+                        ]
+                    ))
 
     return runbooks

@@ -75,3 +75,22 @@ synthetic_targets:
     target: "127.0.0.1:22"
     timeout_sec: 2.0
     warn_latency_ms: 100.0
+
+# DevOps Monitored Daemons & Services
+services:
+  - "nginx"
+  - "docker"
+  - "postgresql"
+  - "mysql"
+  - "redis"
+  - "ssh"
+  - "ufw"
+  - "cron"
+
+# Autonomous DevOps Watchdog & Self-Healing Autopilot
+autopilot:
+  enabled: false
+  check_interval_sec: 60
+  auto_clean_enabled: false   # If true, auto-purges strictly SAFE files when disk exceeds threshold
+  cooldown_sec: 300           # Suppress duplicate alerts for 5 minutes
+

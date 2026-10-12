@@ -47,6 +47,12 @@ class ChaosLimits(BaseModel):
     max_ram_mb: int = 1024
     allow_network_simulation: bool = True
 
+class AutopilotConfig(BaseModel):
+    enabled: bool = False
+    check_interval_sec: int = 60
+    auto_clean_enabled: bool = False
+    cooldown_sec: int = 300
+
 class SentinelConfig(BaseModel):
     server_name: str = "VPS-Production-01"
     environment: str = "production"
@@ -54,6 +60,10 @@ class SentinelConfig(BaseModel):
     alerts: AlertConfig = Field(default_factory=AlertConfig)
     web: ServerConfig = Field(default_factory=ServerConfig)
     chaos: ChaosLimits = Field(default_factory=ChaosLimits)
+    autopilot: AutopilotConfig = Field(default_factory=AutopilotConfig)
+    services: List[str] = Field(default_factory=lambda: [
+        "nginx", "docker", "postgresql", "mysql", "redis", "ssh", "sshd", "ufw", "cron"
+    ])
     synthetic_targets: List[SyntheticTarget] = Field(default_factory=lambda: [
         SyntheticTarget(name="Google DNS", type="dns", target="8.8.8.8"),
         SyntheticTarget(name="Cloudflare DNS", type="dns", target="1.1.1.1"),
