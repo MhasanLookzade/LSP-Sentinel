@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 from pydantic import BaseModel
@@ -17,6 +17,9 @@ from sentinel.core.chaos import ChaosEngine
 from sentinel.core.runbooks import generate_sre_runbooks
 from sentinel.core.alerts import AlertDispatcher
 from sentinel.core.docker_monitor import DockerMonitor
+from sentinel.core.services_monitor import ServicesMonitor
+from sentinel.core.prometheus_exporter import PrometheusExporter
+from sentinel.core.autopilot import AutopilotEngine
 
 app = FastAPI(
     title="LSP-Sentinel SRE Dashboard",
@@ -38,6 +41,7 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 cfg = load_config()
+autopilot_engine = AutopilotEngine(config=cfg, cooldown_sec=cfg.autopilot.cooldown_sec)
 
 class CleanRequest(BaseModel):
     files: List[str]
@@ -127,13 +131,56 @@ async def api_chaos(req: ChaosRequest):
         "experiment": res.to_dict()
     }
 
+@app.get("/metrics")
+async def prometheus_metrics():
+    """Exposes Prometheus / OpenMetrics scraping format."""
+    exporter = PrometheusExporter(cfg)
+    metrics_output = exporter.generate_metrics()
+    return Response(
+        content=metrics_output,
+        media_type="text/plain; version=0.0.4; charset=utf-8"
+    )
+
+@app.get("/api/services")
+async def api_services():
+    """Inspect status of critical DevOps services and failed systemd units."""
+    sm = ServicesMonitor(services=getattr(cfg, "services", None))
+    return {
+        "status": "success",
+        "summary": sm.get_summary()
+    }
+
+@app.get("/api/autopilot/status")
+async def api_autopilot_status():
+    """Retrieve autonomous autopilot status, last cycles, and alert debouncing state."""
+    return {
+        "status": "success",
+        "autopilot": autopilot_engine.get_status()
+    }
+
+@app.post("/api/autopilot/run-cycle")
+async def api_autopilot_cycle(auto_clean: bool = False):
+    """Trigger an on-demand autonomous audit cycle with optional safe self-healing relief."""
+    res = autopilot_engine.run_check_cycle(auto_clean=auto_clean)
+    return {
+        "status": "success",
+        "cycle": res.to_dict()
+    }
+
 @app.get("/api/runbooks")
 async def api_runbooks():
     h = get_full_hard_health()
     syn = [s.to_dict() for s in run_synthetic_probes(cfg.synthetic_targets)]
     dm = DockerMonitor()
     dock = dm.get_containers_health() if dm.available else []
-    runbooks = generate_sre_runbooks(h, synthetic_results=syn, docker_containers=dock)
+    sm = ServicesMonitor(services=getattr(cfg, "services", None))
+    svc_summary = sm.get_summary()
+    runbooks = generate_sre_runbooks(
+        h,
+        synthetic_results=syn,
+        docker_containers=dock,
+        services_summary=svc_summary
+    )
     return {
         "status": "success",
         "count": len(runbooks),
@@ -152,3 +199,4 @@ async def api_test_alert(req: AlertTestRequest):
         "status": "success",
         "delivery": res
     }
+

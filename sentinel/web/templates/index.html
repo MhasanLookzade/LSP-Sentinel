@@ -32,6 +32,9 @@
       <div class="status-pill">
         <span>💻 <span id="server-os">--</span></span>
       </div>
+      <a href="/metrics" target="_blank" class="status-pill" style="text-decoration:none; color:var(--accent-cyan); font-weight:600;" title="View Prometheus / OpenMetrics Scraping Feed">
+        📈 Prometheus /metrics
+      </a>
       <button class="btn btn-secondary" id="btn-test-alert" onclick="triggerTestAlert()">
         🔔 Test Alert
       </button>
@@ -48,6 +51,12 @@
     </button>
     <button class="tab-btn" data-tab="tab-synthetic">
       🌐 Synthetic Probes & TLS
+    </button>
+    <button class="tab-btn" data-tab="tab-services">
+      ⚙️ Services & Daemons
+    </button>
+    <button class="tab-btn" data-tab="tab-autopilot">
+      🤖 DevOps Autopilot
     </button>
     <button class="tab-btn" data-tab="tab-chaos">
       ⚡ Chaos & Resilience Lab
@@ -292,6 +301,113 @@
               <tr><td colspan="6" style="text-align:center;">Running synthetic probes...</td></tr>
             </tbody>
           </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB: Services & Daemons -->
+    <section id="tab-services" class="tab-content">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
+        <div>
+          <h2 style="font-size:1.3rem; font-weight:700;">⚙️ DevOps Services & Daemons Inspector</h2>
+          <p style="color:var(--text-secondary); font-size:0.9rem;">Real-time inspection of systemd units, critical services, process PIDs, and memory footprint.</p>
+        </div>
+        <button class="btn btn-secondary" onclick="fetchServices()">🔄 Re-audit Services</button>
+      </div>
+
+      <div class="grid-4" style="margin-bottom: 2rem;">
+        <div class="glass-card">
+          <div class="card-header"><span class="card-title">Monitored</span><span>📦</span></div>
+          <div class="metric-big" id="svc-stat-total">--</div>
+          <div class="metric-sub">Configured Services</div>
+        </div>
+        <div class="glass-card">
+          <div class="card-header"><span class="card-title">Active</span><span>🟢</span></div>
+          <div class="metric-big" id="svc-stat-active" style="color:var(--accent-green);">--</div>
+          <div class="metric-sub">Running & Healthy</div>
+        </div>
+        <div class="glass-card">
+          <div class="card-header"><span class="card-title">Inactive / Stopped</span><span>⚪</span></div>
+          <div class="metric-big" id="svc-stat-inactive" style="color:var(--text-muted);">--</div>
+          <div class="metric-sub">Dormant Daemons</div>
+        </div>
+        <div class="glass-card">
+          <div class="card-header"><span class="card-title">Failed Units</span><span>🔴</span></div>
+          <div class="metric-big" id="svc-stat-failed" style="color:var(--accent-red);">--</div>
+          <div class="metric-sub">Systemd Failures</div>
+        </div>
+      </div>
+
+      <div id="services-failed-box" style="display:none; margin-bottom: 2rem;" class="glass-card" style="border-color: rgba(255, 75, 114, 0.4);">
+        <div class="card-header">
+          <h2 class="card-title" style="color: var(--accent-red);">⚠️ Systemd Units in Failed State</h2>
+        </div>
+        <div id="services-failed-list" style="padding: 1rem; color: #fff; font-family: var(--font-mono); font-size: 0.9rem;"></div>
+      </div>
+
+      <div class="glass-card">
+        <div class="card-header">
+          <h2 class="card-title" style="font-size:1.05rem; color:#fff;">Monitored DevOps Daemons</h2>
+        </div>
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Service Name</th>
+                <th>Status</th>
+                <th>Sub-State</th>
+                <th>PID</th>
+                <th>Memory RSS</th>
+                <th>Daemon Details</th>
+              </tr>
+            </thead>
+            <tbody id="services-tbody">
+              <tr><td colspan="6" style="text-align:center;">Auditing services...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB: DevOps Autopilot -->
+    <section id="tab-autopilot" class="tab-content">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
+        <div>
+          <h2 style="font-size:1.3rem; font-weight:700;">🤖 DevOps Autopilot & Self-Healing Watchdog</h2>
+          <p style="color:var(--text-secondary); font-size:0.9rem;">Autonomous monitoring cycles, smart alert deduplication, and safe emergency disk relief.</p>
+        </div>
+        <div style="display:flex; gap:0.75rem;">
+          <button class="btn btn-secondary" onclick="runAutopilotCycle(false)">⚡ Run Audit Cycle</button>
+          <button class="btn btn-primary" onclick="runAutopilotCycle(true)">🛡️ Run Cycle & Safe Auto-Relief</button>
+        </div>
+      </div>
+
+      <div class="grid-3" style="margin-bottom: 2rem;">
+        <div class="glass-card">
+          <div class="card-header"><span class="card-title">Watchdog Status</span><span>⏱️</span></div>
+          <div class="metric-big" id="ap-stat-status" style="color:var(--accent-cyan); font-size:1.6rem;">READY</div>
+          <div class="metric-sub" id="ap-stat-cooldown">Cooldown: 300s debounced</div>
+        </div>
+        <div class="glass-card">
+          <div class="card-header"><span class="card-title">Completed Cycles</span><span>🔄</span></div>
+          <div class="metric-big" id="ap-stat-cycles">--</div>
+          <div class="metric-sub">Audit iterations evaluated</div>
+        </div>
+        <div class="glass-card">
+          <div class="card-header"><span class="card-title">Prometheus Telemetry</span><span>📈</span></div>
+          <div class="metric-big" style="font-size:1.4rem;">
+            <a href="/metrics" target="_blank" style="color:var(--accent-blue); text-decoration:none;">/metrics</a>
+          </div>
+          <div class="metric-sub">OpenMetrics feed ready</div>
+        </div>
+      </div>
+
+      <div class="glass-card">
+        <div class="card-header">
+          <h2 class="card-title" style="font-size:1.05rem; color:#fff;">📋 Autopilot Telemetry & Self-Healing Execution Log</h2>
+        </div>
+        <div id="autopilot-log-box" style="padding: 1.5rem; font-family: var(--font-mono); font-size: 0.88rem; min-height: 220px; line-height: 1.6; color: var(--text-secondary);">
+          Click "Run Audit Cycle" to execute an on-demand autonomous health evaluation across CPU, RAM, Disks, and Services.
         </div>
       </div>
     </section>

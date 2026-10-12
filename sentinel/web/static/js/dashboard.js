@@ -7,6 +7,8 @@ document.addEventListener("DOMContentLoaded", () => {
   initTabs();
   fetchHealth();
   fetchSynthetic();
+  fetchServices();
+  fetchAutopilotStatus();
   fetchRunbooks();
   triggerDiskScan();
 
@@ -439,3 +441,126 @@ function escapeHtml(str) {
   if (!str) return "";
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
+
+// 8. Fetch Services & Daemons
+async function fetchServices() {
+  const tbody = document.getElementById("services-tbody");
+  if (!tbody) return;
+  try {
+    const res = await fetch("/api/services");
+    const json = await res.json();
+    if (json.status !== "success") return;
+
+    const summary = json.summary;
+    document.getElementById("svc-stat-total").innerText = summary.total_monitored;
+    document.getElementById("svc-stat-active").innerText = summary.active_count;
+    document.getElementById("svc-stat-inactive").innerText = summary.inactive_count;
+    document.getElementById("svc-stat-failed").innerText = summary.failed_count;
+
+    // Failed units box
+    const failedBox = document.getElementById("services-failed-box");
+    const failedList = document.getElementById("services-failed-list");
+    if (summary.failed_units && summary.failed_units.length > 0) {
+      failedBox.style.display = "block";
+      failedList.innerHTML = summary.failed_units.map(u => `<div>✖ ${escapeHtml(u)}</div>`).join("");
+    } else {
+      failedBox.style.display = "none";
+    }
+
+    if (!summary.services || summary.services.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;">No services configured.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = summary.services.map(s => {
+      let badgeClass = "badge-safe";
+      let badgeLabel = "ACTIVE";
+      if (s.status === "failed") {
+        badgeClass = "badge-crit";
+        badgeLabel = "FAILED";
+      } else if (s.status === "inactive") {
+        badgeClass = "badge-rev";
+        badgeLabel = "INACTIVE";
+      }
+
+      const pidText = s.pid ? s.pid : "--";
+      const memText = s.memory_mb ? `${s.memory_mb} MB` : "--";
+
+      return `
+        <tr>
+          <td style="font-weight:600; color:#fff;">${escapeHtml(s.name)}</td>
+          <td><span class="badge ${badgeClass}">${badgeLabel}</span></td>
+          <td style="font-family:var(--font-mono); font-size:0.85rem; color:var(--text-secondary);">${escapeHtml(s.sub_state)}</td>
+          <td style="font-family:var(--font-mono);">${pidText}</td>
+          <td style="font-family:var(--font-mono);">${memText}</td>
+          <td style="font-size:0.85rem; color:var(--text-muted);">${escapeHtml(s.description || "")}</td>
+        </tr>
+      `;
+    }).join("");
+
+  } catch (err) {
+    console.error("Failed to fetch services:", err);
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--accent-red);">Failed to load services.</td></tr>`;
+  }
+}
+
+// 9. Autopilot Status & Cycle Trigger
+async function fetchAutopilotStatus() {
+  try {
+    const res = await fetch("/api/autopilot/status");
+    const json = await res.json();
+    if (json.status !== "success") return;
+    const ap = json.autopilot;
+    const statCycles = document.getElementById("ap-stat-cycles");
+    if (statCycles) statCycles.innerText = ap.total_cycles;
+    const statCooldown = document.getElementById("ap-stat-cooldown");
+    if (statCooldown) statCooldown.innerText = `Cooldown: ${ap.cooldown_sec}s debounced`;
+  } catch (e) {
+    console.error("Autopilot status error:", e);
+  }
+}
+
+async function runAutopilotCycle(autoClean) {
+  const box = document.getElementById("autopilot-log-box");
+  if (box) {
+    box.innerHTML = `<span style="color:var(--accent-cyan);">⚙️ Executing autonomous evaluation cycle (Auto-Clean: ${autoClean ? 'ENABLED' : 'DISABLED'})...</span>`;
+  }
+  try {
+    const res = await fetch(`/api/autopilot/run-cycle?auto_clean=${autoClean}`, { method: "POST" });
+    const json = await res.json();
+    if (json.status !== "success") {
+      if (box) box.innerHTML = `<span style="color:var(--accent-red);">Execution error: ${json.detail || 'Unknown'}</span>`;
+      return;
+    }
+
+    const c = json.cycle;
+    const dateStr = new Date(c.timestamp * 1000).toLocaleTimeString();
+    let html = `<div><strong style="color:var(--accent-green);">✔ Cycle Completed at ${dateStr}</strong></div>`;
+    html += `<div>• Anomalies Detected: <strong style="${c.issues_count > 0 ? 'color:var(--accent-red);' : 'color:var(--accent-green);'}">${c.issues_count}</strong></div>`;
+
+    if (c.issues && c.issues.length > 0) {
+      html += `<div style="margin-top:0.5rem; color:var(--accent-amber);">Issues Diagnosed:</div>`;
+      c.issues.forEach(iss => {
+        html += `<div style="margin-left:1rem; color:#fff;">- ${escapeHtml(iss)}</div>`;
+      });
+    }
+
+    if (c.alerts && c.alerts.length > 0) {
+      html += `<div style="margin-top:0.5rem; color:var(--accent-cyan);">Alerts Dispatched:</div>`;
+      c.alerts.forEach(al => {
+        html += `<div style="margin-left:1rem;">📢 ${escapeHtml(al)}</div>`;
+      });
+    }
+
+    if (c.auto_cleaned_mb > 0) {
+      html += `<div style="margin-top:0.5rem; color:var(--accent-green); font-weight:700;">🧹 Autonomous Relief: Reclaimed ${c.auto_cleaned_mb} MB across ${c.cleaned_files_count} safe files!</div>`;
+    }
+
+    if (box) box.innerHTML = html;
+    fetchAutopilotStatus();
+    fetchHealth();
+  } catch (err) {
+    if (box) box.innerHTML = `<span style="color:var(--accent-red);">Failed to run cycle: ${err}</span>`;
+  }
+}
+
