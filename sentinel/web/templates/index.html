@@ -58,6 +58,9 @@
     <button class="tab-btn" data-tab="tab-autopilot">
       🤖 DevOps Autopilot
     </button>
+    <button class="tab-btn" data-tab="tab-drift">
+      ⏳ Time-Machine Drift
+    </button>
     <button class="tab-btn" data-tab="tab-chaos">
       ⚡ Chaos & Resilience Lab
     </button>
@@ -408,6 +411,80 @@
         </div>
         <div id="autopilot-log-box" style="padding: 1.5rem; font-family: var(--font-mono); font-size: 0.88rem; min-height: 220px; line-height: 1.6; color: var(--text-secondary);">
           Click "Run Audit Cycle" to execute an on-demand autonomous health evaluation across CPU, RAM, Disks, and Services.
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB: Time-Machine System Drift -->
+    <section id="tab-drift" class="tab-content">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; flex-wrap:wrap; gap:1rem;">
+        <div>
+          <h2 style="font-size:1.3rem; font-weight:700;">⏳ Time-Machine System Drift & Change Ledger</h2>
+          <p style="color:var(--text-secondary); font-size:0.9rem;">Answers the #1 war room question: <em>"What changed on this server in the last 2 hours?"</em></p>
+        </div>
+        <div style="display:flex; gap:0.75rem; align-items:center;">
+          <select id="drift-time-select" class="btn btn-secondary" style="background:#0e131f; color:#fff; border:1px solid var(--border-subtle); padding:0.55rem 1rem; border-radius:var(--radius-sm); outline:none;" onchange="fetchDrift()">
+            <option value="30">Last 30 Minutes</option>
+            <option value="60">Last 1 Hour</option>
+            <option value="120" selected>Last 2 Hours</option>
+            <option value="360">Last 6 Hours</option>
+            <option value="1440">Last 24 Hours</option>
+          </select>
+          <button class="btn btn-secondary" onclick="fetchDrift()">🔄 Refresh</button>
+          <button class="btn btn-primary" onclick="triggerDriftSnapshot()">📸 Snapshot Now</button>
+        </div>
+      </div>
+
+      <div class="grid-4" style="margin-bottom: 2rem;">
+        <div class="glass-card">
+          <div class="card-header"><span class="card-title">Tracked Targets</span><span>📁</span></div>
+          <div class="metric-big" id="drift-stat-tracked">--</div>
+          <div class="metric-sub">Configs, Crons & Packages</div>
+        </div>
+        <div class="glass-card">
+          <div class="card-header"><span class="card-title">Recent Drift (2h)</span><span>⚡</span></div>
+          <div class="metric-big" id="drift-stat-2h" style="color:var(--accent-amber);">--</div>
+          <div class="metric-sub">Changes in 2 hours</div>
+        </div>
+        <div class="glass-card">
+          <div class="card-header"><span class="card-title">Daily Drift (24h)</span><span>📅</span></div>
+          <div class="metric-big" id="drift-stat-24h">--</div>
+          <div class="metric-sub">Changes in 24 hours</div>
+        </div>
+        <div class="glass-card">
+          <div class="card-header"><span class="card-title">Pre-Incident Correlated</span><span>🚨</span></div>
+          <div class="metric-big" id="drift-stat-correlated" style="color:var(--accent-red);">0</div>
+          <div class="metric-sub">Linked to Active Issues</div>
+        </div>
+      </div>
+
+      <div id="drift-correlated-banner" style="display:none; margin-bottom: 2rem; border-left: 4px solid var(--accent-red); background: rgba(255, 75, 114, 0.1); padding: 1.25rem; border-radius: var(--radius-sm);">
+        <div style="font-weight: 700; color: var(--accent-red); margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+          <span>🚨 High Correlation Warning: Changes Detected Immediately Preceding Incident</span>
+        </div>
+        <div id="drift-correlated-list" style="font-family: var(--font-mono); font-size: 0.88rem; color: #fff;"></div>
+      </div>
+
+      <div class="glass-card">
+        <div class="card-header">
+          <h2 class="card-title" style="font-size:1.05rem; color:#fff;">Historical System Change Ledger</h2>
+        </div>
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Time Window</th>
+                <th>Category</th>
+                <th>Action</th>
+                <th>Target File / Package</th>
+                <th>Change Description</th>
+                <th style="width: 100px;">Diff</th>
+              </tr>
+            </thead>
+            <tbody id="drift-tbody">
+              <tr><td colspan="6" style="text-align:center;">Loading change ledger...</td></tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </section>

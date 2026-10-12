@@ -20,6 +20,7 @@ from sentinel.core.docker_monitor import DockerMonitor
 from sentinel.core.services_monitor import ServicesMonitor
 from sentinel.core.prometheus_exporter import PrometheusExporter
 from sentinel.core.autopilot import AutopilotEngine
+from sentinel.core.drift_tracker import DriftTracker
 
 app = FastAPI(
     title="LSP-Sentinel SRE Dashboard",
@@ -42,6 +43,11 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 
 cfg = load_config()
 autopilot_engine = AutopilotEngine(config=cfg, cooldown_sec=cfg.autopilot.cooldown_sec)
+drift_tracker = DriftTracker(
+    watch_paths=cfg.drift.watch_paths,
+    state_file=cfg.drift.state_file,
+    max_history=cfg.drift.max_history
+)
 
 class CleanRequest(BaseModel):
     files: List[str]
@@ -167,6 +173,31 @@ async def api_autopilot_cycle(auto_clean: bool = False):
         "cycle": res.to_dict()
     }
 
+@app.get("/api/drift")
+async def api_drift(since_minutes: int = 120):
+    """Retrieve recent configuration and system changes tracked by the Time-Machine."""
+    changes = drift_tracker.get_recent_changes(since_seconds=since_minutes * 60)
+    summary = drift_tracker.get_summary()
+    correlated = drift_tracker.correlate_with_incident(window_seconds=since_minutes * 60)
+    return {
+        "status": "success",
+        "since_minutes": since_minutes,
+        "summary": summary,
+        "changes_count": len(changes),
+        "changes": [c.to_dict() for c in changes],
+        "correlated": correlated
+    }
+
+@app.post("/api/drift/snapshot")
+async def api_drift_snapshot():
+    """Trigger an immediate Time-Machine state snapshot and delta audit."""
+    new_events = drift_tracker.snapshot_and_audit()
+    return {
+        "status": "success",
+        "newly_detected": len(new_events),
+        "events": [e.to_dict() for e in new_events]
+    }
+
 @app.get("/api/runbooks")
 async def api_runbooks():
     h = get_full_hard_health()
@@ -175,11 +206,13 @@ async def api_runbooks():
     dock = dm.get_containers_health() if dm.available else []
     sm = ServicesMonitor(services=getattr(cfg, "services", None))
     svc_summary = sm.get_summary()
+    correlated_drift = drift_tracker.correlate_with_incident(window_seconds=3600)
     runbooks = generate_sre_runbooks(
         h,
         synthetic_results=syn,
         docker_containers=dock,
-        services_summary=svc_summary
+        services_summary=svc_summary,
+        drift_changes=correlated_drift
     )
     return {
         "status": "success",

@@ -9,6 +9,7 @@ document.addEventListener("DOMContentLoaded", () => {
   fetchSynthetic();
   fetchServices();
   fetchAutopilotStatus();
+  fetchDrift();
   fetchRunbooks();
   triggerDiskScan();
 
@@ -380,6 +381,13 @@ async function fetchRunbooks() {
     container.innerHTML = json.runbooks.map(rb => {
       const isCrit = rb.severity === "CRITICAL";
       const borderCol = isCrit ? "var(--accent-red)" : "var(--accent-amber)";
+      const correlatedHtml = (rb.correlated_changes && rb.correlated_changes.length > 0) ? `
+        <div style="background:rgba(255,184,0,0.1); border-left:3px solid var(--accent-amber); padding:0.6rem 0.9rem; border-radius:4px; margin-bottom:1rem; font-size:0.85rem;">
+          <strong style="color:var(--accent-amber);">⚡ Pre-Incident System Drift (${rb.correlated_changes.length} change(s) detected):</strong>
+          ${rb.correlated_changes.slice(0, 3).map(c => `<div style="font-family:var(--font-mono); font-size:0.8rem; margin-top:3px; color:#fff;">• ${escapeHtml(c.time_label)}: ${escapeHtml(c.target)} <span style="color:var(--accent-cyan);">[${escapeHtml(c.action)}]</span></div>`).join("")}
+        </div>
+      ` : "";
+
       return `
         <div class="glass-card" style="border-left: 4px solid ${borderCol}; margin-bottom: 1.5rem;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
@@ -389,7 +397,7 @@ async function fetchRunbooks() {
           <p style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:1rem;">
             <strong>Observation:</strong> ${escapeHtml(rb.metric_value)}
           </p>
-
+          ${correlatedHtml}
           <div style="margin-bottom:1rem;">
             <div style="font-size:0.8rem; font-weight:700; text-transform:uppercase; color:var(--text-muted); margin-bottom:4px;">Likely Root Causes:</div>
             <ul style="padding-left:1.25rem; font-size:0.85rem; color:var(--text-secondary);">
@@ -563,4 +571,118 @@ async function runAutopilotCycle(autoClean) {
     if (box) box.innerHTML = `<span style="color:var(--accent-red);">Failed to run cycle: ${err}</span>`;
   }
 }
+
+// 10. Time-Machine Drift Ledger
+let currentDriftData = [];
+
+async function fetchDrift() {
+  const tbody = document.getElementById("drift-tbody");
+  if (!tbody) return;
+  const select = document.getElementById("drift-time-select");
+  const mins = select ? select.value : 120;
+
+  try {
+    const res = await fetch(`/api/drift?since_minutes=${mins}`);
+    const json = await res.json();
+    if (json.status !== "success") return;
+
+    currentDriftData = json.changes || [];
+    const summary = json.summary || {};
+
+    const statTracked = document.getElementById("drift-stat-tracked");
+    if (statTracked) statTracked.innerText = summary.total_tracked_files || 0;
+
+    const stat2h = document.getElementById("drift-stat-2h");
+    if (stat2h) stat2h.innerText = summary.changes_last_2h || 0;
+
+    const stat24h = document.getElementById("drift-stat-24h");
+    if (stat24h) stat24h.innerText = summary.changes_last_24h || 0;
+
+    const statCorrel = document.getElementById("drift-stat-correlated");
+    const correlated = json.correlated || [];
+    if (statCorrel) statCorrel.innerText = correlated.length;
+
+    // Banner for correlated pre-incident changes
+    const banner = document.getElementById("drift-correlated-banner");
+    const bannerList = document.getElementById("drift-correlated-list");
+    if (banner && bannerList) {
+      if (correlated.length > 0) {
+        banner.style.display = "block";
+        bannerList.innerHTML = correlated.map(c => `
+          <div style="margin-top:4px;">
+            • <strong style="color:var(--accent-amber);">${escapeHtml(c.time_label)}:</strong>
+            ${escapeHtml(c.target)} <span style="color:var(--accent-cyan);">(${escapeHtml(c.action)})</span> - ${escapeHtml(c.details)}
+          </div>
+        `).join("");
+      } else {
+        banner.style.display = "none";
+      }
+    }
+
+    if (!currentDriftData || currentDriftData.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--accent-green); padding:2rem;">✔ Zero configuration drift or package modifications in this time window.</td></tr>`;
+      return;
+    }
+
+    const now = Date.now() / 1000;
+    tbody.innerHTML = currentDriftData.map((e, idx) => {
+      const minsAgo = Math.max(0, Math.floor((now - e.timestamp) / 60));
+      const timeStr = minsAgo > 0 ? `${minsAgo}m ago` : "just now";
+
+      let actBadge = "badge-safe";
+      if (e.action === "MODIFIED") actBadge = "badge-rev";
+      else if (e.action === "DELETED") actBadge = "badge-crit";
+
+      const hasDiff = Boolean(e.diff_preview);
+      const diffBtn = hasDiff
+        ? `<button class="btn btn-secondary" style="padding:0.25rem 0.6rem; font-size:0.75rem;" onclick="viewDiff(${idx})">View Diff</button>`
+        : `<span style="color:var(--text-muted); font-size:0.75rem;">--</span>`;
+
+      return `
+        <tr>
+          <td style="font-weight:600; color:#fff; font-family:var(--font-mono);">${timeStr}</td>
+          <td><span class="status-pill" style="padding:0.2rem 0.5rem; font-size:0.75rem;">${escapeHtml(e.category)}</span></td>
+          <td><span class="badge ${actBadge}">${escapeHtml(e.action)}</span></td>
+          <td style="font-family:var(--font-mono); font-size:0.85rem; color:var(--accent-cyan);">${escapeHtml(e.target)}</td>
+          <td style="font-size:0.85rem; color:var(--text-secondary);">${escapeHtml(e.details)}</td>
+          <td>${diffBtn}</td>
+        </tr>
+      `;
+    }).join("");
+
+  } catch (err) {
+    console.error("Drift fetch error:", err);
+  }
+}
+
+async function triggerDriftSnapshot() {
+  try {
+    const res = await fetch("/api/drift/snapshot", { method: "POST" });
+    const json = await res.json();
+    alert(`Snapshot complete! Newly detected drifts: ${json.newly_detected}`);
+    fetchDrift();
+    fetchRunbooks();
+  } catch (err) {
+    alert("Snapshot failed: " + err);
+  }
+}
+
+function viewDiff(idx) {
+  const item = currentDriftData[idx];
+  if (!item || !item.diff_preview) return;
+
+  const modal = document.getElementById("cleanup-modal");
+  const content = document.getElementById("modal-content-body");
+  const title = document.getElementById("modal-title");
+
+  title.innerText = `Unified Diff: ${item.target}`;
+  content.innerHTML = `
+    <div style="margin-bottom:1rem; font-size:0.85rem; color:var(--text-muted);">
+      Action: <strong style="color:#fff;">${escapeHtml(item.action)}</strong> | Category: <strong style="color:#fff;">${escapeHtml(item.category)}</strong>
+    </div>
+    <pre style="background:#07090e; border:1px solid var(--border-subtle); border-radius:var(--radius-sm); padding:1rem; color:#a6accd; font-family:var(--font-mono); font-size:0.82rem; overflow-x:auto; max-height:400px;">${escapeHtml(item.diff_preview)}</pre>
+  `;
+  modal.classList.add("active");
+}
+
 
