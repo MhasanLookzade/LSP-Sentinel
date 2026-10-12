@@ -18,6 +18,8 @@ from sentinel.core.synthetic import run_synthetic_probes
 from sentinel.core.chaos import ChaosEngine
 from sentinel.core.runbooks import generate_sre_runbooks
 from sentinel.core.docker_monitor import DockerMonitor
+from sentinel.core.services_monitor import ServicesMonitor
+from sentinel.core.autopilot import AutopilotEngine
 
 # Ensure UTF-8 output encoding on Windows consoles
 if sys.platform == "win32":
@@ -349,7 +351,14 @@ def runbook(
         syn = [s.to_dict() for s in run_synthetic_probes(cfg.synthetic_targets)]
         dm = DockerMonitor()
         dock = dm.get_containers_health() if dm.available else []
-        runbooks = generate_sre_runbooks(h, synthetic_results=syn, docker_containers=dock)
+        sm = ServicesMonitor(services=getattr(cfg, "services", None))
+        svc_summary = sm.get_summary()
+        runbooks = generate_sre_runbooks(
+            h,
+            synthetic_results=syn,
+            docker_containers=dock,
+            services_summary=svc_summary
+        )
 
     if not runbooks:
         console.print(Panel("[bold green]✔ All systems nominal! No active incidents or remediation required.[/bold green]", border_style="green"))
@@ -363,6 +372,106 @@ def runbook(
             f"[bold underline]Actionable Remediation Commands:[/bold underline]\n" + "\n".join(f"[bold cyan]$ {cmd}[/bold cyan]" for cmd in inc.commands)
         )
         console.print(Panel(body, title=f"[{col}]Incident Triage: {inc.title}[/{col}]", border_style=col))
+
+@app.command()
+def services(
+    config_file: Optional[Path] = typer.Option(None, "--config", "-c", help="Path to sentinel.yaml")
+):
+    """Inspect status of critical DevOps services and failed systemd units."""
+    render_banner()
+    cfg = load_config(config_file)
+    with Progress(SpinnerColumn(), TextColumn("[bold cyan]Auditing system services and daemons..."), transient=True) as progress:
+        progress.add_task("services", total=None)
+        sm = ServicesMonitor(services=getattr(cfg, "services", None))
+        summary = sm.get_summary()
+
+    t = Table(title="DevOps Services & Daemon Status", show_header=True, header_style="bold magenta", expand=True)
+    t.add_column("Service", style="bold white")
+    t.add_column("Status", justify="center")
+    t.add_column("Sub-State")
+    t.add_column("PID", justify="right")
+    t.add_column("Memory", justify="right")
+    t.add_column("Details", style="dim")
+
+    for s in summary["services"]:
+        st = s["status"]
+        if st == "active":
+            status_badge = "[bold green]🟢 ACTIVE[/bold green]"
+        elif st == "failed":
+            status_badge = "[bold red]🔴 FAILED[/bold red]"
+        else:
+            status_badge = "[dim]⚪ INACTIVE[/dim]"
+
+        pid_str = str(s["pid"]) if s["pid"] else "--"
+        mem_str = f"{s['memory_mb']:.1f} MB" if s["memory_mb"] else "--"
+        t.add_row(
+            s["name"],
+            status_badge,
+            s["sub_state"],
+            pid_str,
+            mem_str,
+            s["description"][:45]
+        )
+    console.print(t)
+
+    failed_units = summary.get("failed_units", [])
+    if failed_units:
+        failed_text = "\n".join(f"[bold red]✖ {u}[/bold red]" for u in failed_units)
+        console.print(Panel(failed_text, title="[bold red]⚠️ Failed Systemd Units[/bold red]", border_style="red"))
+    else:
+        console.print(Panel("[bold green]✔ Zero failed systemd units detected on host.[/bold green]", border_style="green"))
+
+@app.command()
+def autopilot(
+    interval: Optional[int] = typer.Option(None, "--interval", "-i", help="Check interval in seconds"),
+    auto_clean: bool = typer.Option(False, "--auto-clean", help="Enable autonomous emergency purge of SAFE-only logs/cache"),
+    cycles: int = typer.Option(0, "--cycles", "-n", help="Number of check cycles to run (0 = run continuously)"),
+    config_file: Optional[Path] = typer.Option(None, "--config", "-c", help="Path to sentinel.yaml")
+):
+    """Launch Autonomous DevOps Watchdog with live threshold alerts and safe self-healing."""
+    render_banner()
+    cfg = load_config(config_file)
+    check_interval = interval or cfg.autopilot.check_interval_sec
+    engine = AutopilotEngine(config=cfg, cooldown_sec=cfg.autopilot.cooldown_sec)
+
+    clean_mode_str = "[bold green]ENABLED (SAFE-only)[/bold green]" if auto_clean else "[dim]DISABLED[/dim]"
+    console.print(Panel(
+        f"[bold white]Target Server:[/bold white] {cfg.server_name} ({cfg.environment})\n"
+        f"[bold white]Poll Interval:[/bold white] {check_interval} seconds\n"
+        f"[bold white]Auto-Clean Mode:[/bold white] {clean_mode_str}\n"
+        f"[bold white]Alert Cooldown:[/bold white] {cfg.autopilot.cooldown_sec}s\n"
+        f"[dim]Press Ctrl+C to stop autopilot watchdog.[/dim]",
+        title="[bold cyan]🤖 LSP-Sentinel DevOps Autopilot Watchdog[/bold cyan]",
+        border_style="cyan"
+    ))
+
+    import time
+    cycle_count = 0
+    try:
+        while True:
+            cycle_count += 1
+            timestamp_str = time.strftime("%H:%M:%S")
+            res = engine.run_check_cycle(auto_clean=auto_clean)
+
+            if res.issues_detected:
+                console.print(f"[bold yellow][{timestamp_str} | Cycle #{cycle_count}][/bold yellow] Detected [bold red]{len(res.issues_detected)} anomaly(s)[/bold red]:")
+                for issue in res.issues_detected:
+                    console.print(f"  [red]• {issue}[/red]")
+                if res.alerts_dispatched:
+                    console.print(f"  [green]📢 Dispatched alerts: {', '.join(res.alerts_dispatched)}[/green]")
+                if res.auto_cleaned_mb > 0:
+                    console.print(f"  [bold green]🧹 Autonomous Relief: Reclaimed {res.auto_cleaned_mb:.2f} MB across {res.cleaned_files_count} files[/bold green]")
+            else:
+                console.print(f"[dim][{timestamp_str} | Cycle #{cycle_count}][/dim] [green]✔ All server health metrics nominal.[/green]")
+
+            if cycles > 0 and cycle_count >= cycles:
+                console.print(f"\n[bold green]Autopilot completed requested {cycles} cycle(s).[/bold green]")
+                break
+
+            time.sleep(check_interval)
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Autopilot watchdog stopped by user.[/yellow]")
+
 
 @app.command()
 def serve(
