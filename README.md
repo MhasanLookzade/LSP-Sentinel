@@ -63,6 +63,11 @@ Dispatches instant incident alerts to **Telegram Bots**, **Discord Webhooks**, a
 ### 9. 📈 Prometheus & OpenMetrics Exporter (`/metrics`)
 * Embedded `/metrics` endpoint exposes CPU, RAM, disk partition, synthetic probe latencies, container counts, and service states directly to Prometheus & Grafana.
 
+### 10. ⏳ Time-Machine: System Drift & Change Ledger
+* **The #1 War Room Killer**: Instantly answers *"What changed on this server in the last 2 hours?"* before an outage occurred.
+* **Continuous State Tracking**: SHA-256 baselines `/etc`, Nginx/Apache configs, crontabs, `.env` files, and package manager updates (`dpkg`/`apt`/`dnf`).
+* **Pre-Incident Auto-Correlation**: When a probe fails or a service crashes, Sentinel automatically links and highlights config diffs created in the 60 minutes prior.
+
 ---
 
 ## 🚀 Quickstart & Installation
@@ -125,7 +130,8 @@ pip install -e .
 | `lsp-sentinel chaos --type cpu --duration 5` | Run a 5-second CPU resilience experiment |
 | `lsp-sentinel services` | Audit critical DevOps daemons (nginx, docker, postgres, etc.) & failed systemd units |
 | `lsp-sentinel autopilot` | Continuous autonomous watchdog with debounced alerts & safe emergency disk relief |
-| `lsp-sentinel runbook` | Generate dynamic incident triage runbooks for active anomalies |
+| `lsp-sentinel drift` | Time-Machine change ledger: audit recent config drifts, package updates & diffs |
+| `lsp-sentinel runbook` | Generate dynamic incident triage runbooks correlated with pre-incident changes |
 | `lsp-sentinel serve --port 8443` | Launch the embedded modern web dashboard (includes `/metrics` Prometheus feed) |
 
 *(Note: `lsp-sential` is also registered as a valid CLI alias)*

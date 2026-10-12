@@ -2,6 +2,7 @@ import unittest
 from pathlib import Path
 import tempfile
 import os
+import time
 
 from sentinel.core.safety_rules import evaluate_file_safety, evaluate_folder_safety, SafetyLevel, ReclaimAction
 from sentinel.core.metrics import get_system_overview, get_cpu_metrics, get_memory_metrics, get_disk_health_metrics
@@ -11,7 +12,9 @@ from sentinel.core.runbooks import generate_sre_runbooks
 from sentinel.core.services_monitor import ServicesMonitor, ServiceStatus
 from sentinel.core.prometheus_exporter import PrometheusExporter
 from sentinel.core.autopilot import AutopilotEngine
+from sentinel.core.drift_tracker import DriftTracker, ChangeEvent
 from sentinel.config import SentinelConfig, AlertConfig
+
 
 class TestSafetyRules(unittest.TestCase):
     def test_critical_paths_protected(self):
@@ -145,6 +148,52 @@ class TestDevOpsModules(unittest.TestCase):
         status = engine.get_status()
         self.assertEqual(status["total_cycles"], 1)
 
+class TestDriftTracker(unittest.TestCase):
+    def test_drift_snapshot_and_delta_detection(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            test_file = Path(tmpdir) / "nginx.conf"
+            test_file.write_text("worker_processes 1;\nevents { worker_connections 1024; }", encoding="utf-8")
+            state_file = Path(tmpdir) / ".ledger.json"
+
+            tracker = DriftTracker(watch_paths=[str(test_file)], state_file=str(state_file))
+
+            # Initial calibration pass: creates baseline, 0 delta events
+            new_events = tracker.snapshot_and_audit()
+            self.assertEqual(len(new_events), 0)
+            self.assertEqual(len(tracker.file_snapshots), 1)
+
+            # Modify file
+            time.sleep(0.01)
+            test_file.write_text("worker_processes 4;\nevents { worker_connections 2048; }", encoding="utf-8")
+
+            # Second pass: must detect MODIFIED change with diff preview
+            drift_events = tracker.snapshot_and_audit()
+            self.assertEqual(len(drift_events), 1)
+            self.assertEqual(drift_events[0].action, "MODIFIED")
+            self.assertIsNotNone(drift_events[0].diff_preview)
+            self.assertIn("worker_processes", drift_events[0].diff_preview)
+
+            # Correlation check
+            correlated = tracker.correlate_with_incident(window_seconds=3600)
+            self.assertEqual(len(correlated), 1)
+            self.assertIn("time_label", correlated[0])
+
+    def test_runbook_correlated_with_drift(self):
+        fake_health = {"disk": {"partitions": [{"mountpoint": "/", "percent": 96.0}]}, "memory": {}, "cpu": {}, "processes": {}}
+        fake_drift = [{
+            "target": "/etc/nginx/nginx.conf",
+            "action": "MODIFIED",
+            "category": "CONFIG",
+            "time_label": "12m ago"
+        }]
+        runbooks = generate_sre_runbooks(fake_health, drift_changes=fake_drift)
+        self.assertGreaterEqual(len(runbooks), 1)
+        # Ensure root causes contain pre-incident drift note
+        root_causes_text = " ".join(runbooks[0].root_causes)
+        self.assertIn("Pre-Incident Change", root_causes_text)
+        self.assertIn("/etc/nginx/nginx.conf", root_causes_text)
+
 if __name__ == "__main__":
     unittest.main()
+
 
