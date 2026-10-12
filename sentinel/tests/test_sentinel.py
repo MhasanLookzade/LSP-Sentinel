@@ -8,6 +8,10 @@ from sentinel.core.metrics import get_system_overview, get_cpu_metrics, get_memo
 from sentinel.core.cleaner import DiskCleaner
 from sentinel.core.synthetic import SyntheticTarget, probe_dns, probe_tcp
 from sentinel.core.runbooks import generate_sre_runbooks
+from sentinel.core.services_monitor import ServicesMonitor, ServiceStatus
+from sentinel.core.prometheus_exporter import PrometheusExporter
+from sentinel.core.autopilot import AutopilotEngine
+from sentinel.config import SentinelConfig, AlertConfig
 
 class TestSafetyRules(unittest.TestCase):
     def test_critical_paths_protected(self):
@@ -100,5 +104,47 @@ class TestSyntheticAndRunbooks(unittest.TestCase):
         # Verify runbook has copy-paste commands
         self.assertTrue(any("docker" in cmd or "lsp-sentinel" in cmd for rb in runbooks for cmd in rb.commands))
 
+    def test_runbooks_with_failed_services(self):
+        fake_health = {"disk": {}, "memory": {}, "cpu": {}, "processes": {}}
+        fake_services = {
+            "failed_units": ["nginx.service"],
+            "services": [
+                {"name": "postgresql", "status": "failed", "is_critical": True, "sub_state": "failed"}
+            ]
+        }
+        runbooks = generate_sre_runbooks(fake_health, services_summary=fake_services)
+        self.assertGreaterEqual(len(runbooks), 2)
+        titles = [r.title for r in runbooks]
+        self.assertTrue(any("nginx.service" in t for t in titles))
+        self.assertTrue(any("postgresql" in t for t in titles))
+
+class TestDevOpsModules(unittest.TestCase):
+    def test_services_monitor_summary(self):
+        sm = ServicesMonitor(services=["nginx", "docker"])
+        summary = sm.get_summary()
+        self.assertIn("total_monitored", summary)
+        self.assertIn("services", summary)
+        self.assertEqual(summary["total_monitored"], 2)
+        self.assertIsInstance(summary["services"], list)
+
+    def test_prometheus_exporter(self):
+        cfg = SentinelConfig()
+        exporter = PrometheusExporter(cfg)
+        output = exporter.generate_metrics()
+        self.assertIn("sentinel_info", output)
+        self.assertIn("node_cpu_utilization_percent", output)
+        self.assertIn("node_memory_used_bytes", output)
+
+    def test_autopilot_engine_cycle(self):
+        cfg = SentinelConfig(alerts=AlertConfig(enabled=False, cpu_threshold_pct=1.0))
+        engine = AutopilotEngine(config=cfg, cooldown_sec=300)
+        res = engine.run_check_cycle(auto_clean=False)
+        self.assertIsNotNone(res.timestamp)
+        # Since CPU threshold is 1.0%, an anomaly should be detected
+        self.assertGreaterEqual(len(res.issues_detected), 1)
+        status = engine.get_status()
+        self.assertEqual(status["total_cycles"], 1)
+
 if __name__ == "__main__":
     unittest.main()
+

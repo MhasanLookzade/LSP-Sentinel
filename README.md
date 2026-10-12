@@ -52,6 +52,17 @@ When disk usage reaches critical thresholds (>88%), memory is exhausted, or a sy
 ### 6. 📢 Multi-Channel Alerting
 Dispatches instant incident alerts to **Telegram Bots**, **Discord Webhooks**, and **Slack Channels**.
 
+### 7. ⚙️ DevOps Services & Systemd Watchdog
+* **Systemd & Critical Daemons**: Monitors critical infrastructure services (`nginx`, `docker`, `postgresql`, `mysql`, `redis`, `ssh`, `ufw`, `cron`).
+* **Failed Units Auditor**: Instantly detects failed systemd units (`systemctl --failed`) and surfaces instant restart & journalctl diagnosis runbooks.
+
+### 8. 🤖 Autonomous DevOps Autopilot & Self-Healing
+* **Continuous Watchdog Loop**: Continuously audits system health with debounced alerts to eliminate alert fatigue.
+* **Safe Emergency Auto-Relief**: When disk reaches critical saturation, autopilot automatically executes safe cleanups on 🟢 **SAFE-only** caches and rotated logs while strictly shielding protected directories.
+
+### 9. 📈 Prometheus & OpenMetrics Exporter (`/metrics`)
+* Embedded `/metrics` endpoint exposes CPU, RAM, disk partition, synthetic probe latencies, container counts, and service states directly to Prometheus & Grafana.
+
 ---
 
 ## 🚀 Quickstart & Installation
@@ -112,8 +123,10 @@ pip install -e .
 | `lsp-sentinel clean --safe-only --execute` | Safely delete only files classified strictly as SAFE |
 | `lsp-sentinel synthetic` | Probe all configured HTTP endpoints, TCP ports, and SSL certificates |
 | `lsp-sentinel chaos --type cpu --duration 5` | Run a 5-second CPU resilience experiment |
+| `lsp-sentinel services` | Audit critical DevOps daemons (nginx, docker, postgres, etc.) & failed systemd units |
+| `lsp-sentinel autopilot` | Continuous autonomous watchdog with debounced alerts & safe emergency disk relief |
 | `lsp-sentinel runbook` | Generate dynamic incident triage runbooks for active anomalies |
-| `lsp-sentinel serve --port 8443` | Launch the embedded modern web dashboard |
+| `lsp-sentinel serve --port 8443` | Launch the embedded modern web dashboard (includes `/metrics` Prometheus feed) |
 
 *(Note: `lsp-sential` is also registered as a valid CLI alias)*
 
