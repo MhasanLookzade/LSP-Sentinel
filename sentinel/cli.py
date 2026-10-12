@@ -20,6 +20,7 @@ from sentinel.core.runbooks import generate_sre_runbooks
 from sentinel.core.docker_monitor import DockerMonitor
 from sentinel.core.services_monitor import ServicesMonitor
 from sentinel.core.autopilot import AutopilotEngine
+from sentinel.core.drift_tracker import DriftTracker
 
 # Ensure UTF-8 output encoding on Windows consoles
 if sys.platform == "win32":
@@ -353,11 +354,21 @@ def runbook(
         dock = dm.get_containers_health() if dm.available else []
         sm = ServicesMonitor(services=getattr(cfg, "services", None))
         svc_summary = sm.get_summary()
+
+        drift_tracker = DriftTracker(
+            watch_paths=cfg.drift.watch_paths,
+            state_file=cfg.drift.state_file,
+            max_history=cfg.drift.max_history
+        )
+        drift_tracker.snapshot_and_audit()
+        correlated_drift = drift_tracker.correlate_with_incident(window_seconds=3600)
+
         runbooks = generate_sre_runbooks(
             h,
             synthetic_results=syn,
             docker_containers=dock,
-            services_summary=svc_summary
+            services_summary=svc_summary,
+            drift_changes=correlated_drift
         )
 
     if not runbooks:
@@ -366,12 +377,120 @@ def runbook(
 
     for inc in runbooks:
         col = "red" if inc.severity == "CRITICAL" else "yellow"
+        drift_section = ""
+        if inc.correlated_changes:
+            drift_lines = "\n".join(f"  [bold yellow]⚡ {c['time_label']}:[/bold yellow] {c['target']} [magenta]({c['action']})[/magenta]" for c in inc.correlated_changes[:3])
+            drift_section = f"\n[bold red underline]⚡ Pre-Incident System Drift Detected:[/bold red underline]\n{drift_lines}\n"
+
         body = (
             f"[bold]Severity:[/bold] [{col}]{inc.severity}[/{col}]   [bold]Observation:[/bold] {inc.metric_value}\n\n"
+            f"{drift_section}"
             f"[bold underline]Likely Root Causes:[/bold underline]\n" + "\n".join(f"• {c}" for c in inc.root_causes) + "\n\n"
             f"[bold underline]Actionable Remediation Commands:[/bold underline]\n" + "\n".join(f"[bold cyan]$ {cmd}[/bold cyan]" for cmd in inc.commands)
         )
         console.print(Panel(body, title=f"[{col}]Incident Triage: {inc.title}[/{col}]", border_style=col))
+
+@app.command()
+def drift(
+    since: str = typer.Option("2h", "--since", "-s", help="Time window to inspect (e.g. 30m, 2h, 24h)"),
+    show_diff: bool = typer.Option(False, "--diff", "-d", help="Display unified diff previews for modified files"),
+    snapshot: bool = typer.Option(True, "--snapshot/--no-snapshot", help="Take a fresh snapshot and audit changes now"),
+    config_file: Optional[Path] = typer.Option(None, "--config", "-c", help="Path to sentinel.yaml")
+):
+    """Time-Machine: Track configuration drifts, crontab edits, and package updates."""
+    render_banner()
+    cfg = load_config(config_file)
+    tracker = DriftTracker(
+        watch_paths=cfg.drift.watch_paths,
+        state_file=cfg.drift.state_file,
+        max_history=cfg.drift.max_history
+    )
+
+    # Parse time string
+    multiplier = 3600
+    val_str = since.lower().strip()
+    if val_str.endswith("m"):
+        multiplier = 60
+        num = float(val_str[:-1])
+    elif val_str.endswith("h"):
+        multiplier = 3600
+        num = float(val_str[:-1])
+    elif val_str.endswith("d"):
+        multiplier = 86400
+        num = float(val_str[:-1])
+    else:
+        try:
+            num = float(val_str)
+        except ValueError:
+            num = 2.0
+
+    seconds_window = int(num * multiplier)
+
+    with Progress(SpinnerColumn(), TextColumn("[bold cyan]Scanning system for configuration drifts & updates..."), transient=True) as progress:
+        progress.add_task("drift", total=None)
+        if snapshot:
+            newly_found = tracker.snapshot_and_audit()
+        else:
+            newly_found = []
+
+    changes = tracker.get_recent_changes(since_seconds=seconds_window)
+    summary = tracker.get_summary()
+
+    console.print(Panel(
+        f"[bold white]Monitored Targets:[/bold white] {summary['total_tracked_files']} files & packages\n"
+        f"[bold white]Changes in last {since}:[/bold white] [bold {'yellow' if changes else 'green'}]{len(changes)} change event(s)[/bold {'yellow' if changes else 'green'}]\n"
+        f"[bold white]Ledger State:[/bold white] {cfg.drift.state_file}",
+        title="[bold cyan]⏳ Time-Machine System Drift Ledger[/bold cyan]",
+        border_style="cyan"
+    ))
+
+    if not changes:
+        console.print("[bold green]✔ No configuration drift or package modifications detected in the requested time window.[/bold green]\n")
+        return
+
+    t = Table(title=f"Changes Detected in the Last {since}", show_header=True, header_style="bold magenta", expand=True)
+    t.add_column("Time", style="bold white", width=14)
+    t.add_column("Category", justify="center", width=12)
+    t.add_column("Action", justify="center", width=12)
+    t.add_column("Target Path / Package", style="bold cyan")
+    t.add_column("Details", style="dim")
+
+    now = time.time()
+    for e in reversed(changes):
+        mins_ago = max(0, int((now - e.timestamp) / 60))
+        time_str = f"{mins_ago}m ago" if mins_ago > 0 else "just now"
+
+        if e.action == "MODIFIED":
+            act_badge = "[bold yellow]MODIFIED[/bold yellow]"
+        elif e.action in ("CREATED", "UPGRADED"):
+            act_badge = "[bold green]" + e.action + "[/bold green]"
+        else:
+            act_badge = "[bold red]" + e.action + "[/bold red]"
+
+        cat_badge = f"[cyan]{e.category}[/cyan]"
+        t.add_row(
+            time_str,
+            cat_badge,
+            act_badge,
+            e.target,
+            e.details[:60]
+        )
+
+    console.print(t)
+
+    if show_diff:
+        diff_count = 0
+        for e in reversed(changes):
+            if e.diff_preview:
+                diff_count += 1
+                console.print(Panel(
+                    f"[dim]{e.diff_preview}[/dim]",
+                    title=f"[yellow]Unified Diff: {e.target}[/yellow]",
+                    border_style="yellow"
+                ))
+        if diff_count == 0:
+            console.print("[dim]No textual diffs available for these changes.[/dim]")
+
 
 @app.command()
 def services(
